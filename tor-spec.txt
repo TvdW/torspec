@@ -158,63 +158,15 @@ see tor-design.pdf.
 2. Connections
 
    Connections between two Tor relays, or between a client and a relay,
-   use TLS/SSLv3 for link authentication and encryption.  All
-   implementations MUST support the SSLv3 ciphersuite
-   "SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA", and SHOULD support the TLS
-   ciphersuite "TLS_DHE_RSA_WITH_AES_128_CBC_SHA" if it is available.
+   use TLS for link authentication and encryption.
 
-   There are three ways to perform TLS handshakes with a Tor server.  In
-   the first way, "certificates-up-front", both the initiator and
-   responder send a two-certificate chain as part of their initial
-   handshake.  (This is supported in all Tor versions.)  In the second
-   way, "renegotiation", the responder provides a single certificate,
-   and the initiator immediately performs a TLS renegotiation.  (This is
-   supported in Tor 0.2.0.21 and later.)  And in the third way,
-   "in-protocol", the initial TLS renegotiation completes, and the
-   parties bootstrap themselves to mutual authentication via use of the
-   Tor protocol without further TLS handshaking.  (This is supported in
-   0.2.3.6-alpha and later.)
+   When the initial TLS negotiation completes, the parties bootstrap
+   themselves to mutual authentication via use of the Tor protocol without
+   further TLS handshaking.  (This is supported in 0.2.3.6-alpha and later.)
 
-   Each of these options provides a way for the parties to learn it is
-   available: a client does not need to know the version of the Tor
-   server in order to connect to it properly.
-
-   In "certificates up-front" (a.k.a "the v1 handshake"),
-   the connection initiator always sends a
-   two-certificate chain, consisting of an X.509 certificate using a
-   short-term connection public key and a second, self-signed X.509
-   certificate containing its identity key.  The other party sends a similar
-   certificate chain.  The initiator's ClientHello MUST NOT include any
-   ciphersuites other than:
-     TLS_DHE_RSA_WITH_AES_256_CBC_SHA
-     TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-     SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA
-
-   In "renegotiation" (a.k.a. "the v2 handshake"),
-   the connection initiator sends no certificates, and
-   the responder sends a single connection certificate.  Once the TLS
-   handshake is complete, the initiator renegotiates the handshake, with each
-   party sending a two-certificate chain as in "certificates up-front".
-   The initiator's ClientHello MUST include at least one ciphersuite not in
-   the list above -- that's how the initiator indicates that it can
-   handle this handshake.  For other considerations on the initiator's
-   ClientHello, see section 2.1 below.
-
-   In "in-protocol" (a.k.a. "the v3 handshake"), the initiator sends no
-   certificates, and the
-   responder sends a single connection certificate.  The choice of
-   ciphersuites must be as in a "renegotiation" handshake.  There are
-   additionally a set of constraints on the connection certificate,
-   which the initiator can use to learn that the in-protocol handshake
-   is in use.  Specifically, at least one of these properties must be
-   true of the certificate:
-      * The certificate is self-signed
-      * Some component other than "commonName" is set in the subject or
-        issuer DN of the certificate.
-      * The commonName of the subject or issuer of the certificate ends
-        with a suffix other than ".net".
-      * The certificate's public key modulus is longer than 1024 bits.
-   The initiator then sends a VERSIONS cell to the responder, which then
+   The initiator sends no certificates, and the
+   responder sends a single connection certificate.  The initiator then sends
+   a VERSIONS cell to the responder, which then
    replies with a VERSIONS cell; they have then negotiated a Tor
    protocol version.  Assuming that the version they negotiate is 3 or higher
    (the only ones specified for use with this handshake right now), the
@@ -222,36 +174,14 @@ see tor-design.pdf.
    cell to the initiator, which may send either CERTS, AUTHENTICATE,
    NETINFO if it wants to authenticate, or just NETINFO if it does not.
 
-   For backward compatibility between later handshakes and "certificates
-   up-front", the ClientHello of an initiator that supports a later
-   handshake MUST include at least one ciphersuite other than those listed
-   above. The connection responder examines the initiator's ciphersuite list
-   to see whether it includes any ciphers other than those included in the
-   list above.  If extra ciphers are included, the responder proceeds as in
-   "renegotiation" and "in-protocol": it sends a single certificate and
-   does not request
-   client certificates.  Otherwise (in the case that no extra ciphersuites
-   are included in the ClientHello) the responder proceeds as in
-   "certificates up-front": it requests client certificates, and sends a
-   two-certificate chain.  In either case, once the responder has sent its
-   certificate or certificates, the initiator counts them.  If two
-   certificates have been sent, it proceeds as in "certificates up-front";
-   otherwise, it proceeds as in "renegotiation" or "in-protocol".
+   [Versions 1 and 2 of the link protocol authenticated by sending multiple
+   certificates up-front, or by attempting a renegotiate after the initial
+   handshake. Server implementations MAY wait until a protocol violation is
+   made and close the connection, or they MAY close the connection immediately
+   upon detecting the old handshake.]
 
-   To decide whether to do "renegotiation" or "in-protocol", the
-   initiator checks whether the responder's initial certificate matches
-   the criteria listed above.
-
-   All new relay implementations of the Tor protocol MUST support
-   backwards-compatible renegotiation; clients SHOULD do this too.  If
-   this is not possible, new client implementations MUST support both
-   "renegotiation" and "in-protocol" and use the router's
-   published link protocols list (see dir-spec.txt on the "protocols" entry)
-   to decide which to use.
-
-   In all of the above handshake variants, certificates sent in the clear
-   SHOULD NOT include any strings to identify the host as a Tor relay. In
-   the "renegotiation" and "backwards-compatible renegotiation" steps, the
+   Certificates sent in the clear
+   SHOULD NOT include any strings to identify the host as a Tor relay. The
    initiator SHOULD choose a list of ciphersuites and TLS extensions
    to mimic one used by a popular web browser.
 
@@ -261,12 +191,12 @@ see tor-design.pdf.
    local requests. Onion proxies SHOULD NOT provide long-term-trackable
    identifiers in their handshakes.
 
-   In all handshake variants, once all certificates are exchanged, all
+   Once all certificates are exchanged, all
    parties receiving certificates must confirm that the identity key is as
    expected.  (When initiating a connection, the expected identity key is
    the one given in the directory; when creating a connection because of an
    EXTEND cell, the expected identity key is the one given in the cell.)  If
-   the key is not as expected, the party must close the connection.
+   the key is not as expected, the party MUST close the connection.
 
    When connecting to an OR, all parties SHOULD reject the connection if that
    OR has a malformed or missing certificate.  When accepting an incoming
@@ -326,34 +256,16 @@ see tor-design.pdf.
      TLS1_ECDH_RSA_WITH_AES_128_CBC_SHA
      TLS1_ECDH_ECDSA_WITH_RC4_128_SHA
      TLS1_ECDH_ECDSA_WITH_AES_128_CBC_SHA
-     SSL3_RSA_RC4_128_MD5
-     SSL3_RSA_RC4_128_SHA
      TLS1_RSA_WITH_AES_128_SHA
      TLS1_ECDHE_ECDSA_WITH_DES_192_CBC3_SHA
      TLS1_ECDHE_RSA_WITH_DES_192_CBC3_SHA
-     SSL3_EDH_RSA_DES_192_CBC3_SHA
-     SSL3_EDH_DSS_DES_192_CBC3_SHA
      TLS1_ECDH_RSA_WITH_DES_192_CBC3_SHA
      TLS1_ECDH_ECDSA_WITH_DES_192_CBC3_SHA
-     SSL3_RSA_FIPS_WITH_3DES_EDE_CBC_SHA
-     SSL3_RSA_DES_192_CBC3_SHA
-     [*] The "extended renegotiation is supported" ciphersuite, 0x00ff, is
-         not counted when checking the list of ciphersuites.
-
-   If the client sends the Fixed Ciphersuite List, the responder MUST NOT
-   select any ciphersuite besides TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
-   TLS_DHE_RSA_WITH_AES_128_CBC_SHA, and SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA:
-   such ciphers might not actually be supported by the client.
-
-   If the client sends a v2+ ClientHello with a list of ciphers other then
-   the Fixed Ciphersuite List, the responder can trust that the client
-   supports every cipher advertised in that list, so long as that ciphersuite
-   is also supported by OpenSSL 1.0.1.
 
    Responders MUST NOT select any TLS ciphersuite that lacks ephemeral keys,
    or whose symmetric keys are less then KEY_LEN bits, or whose digests are
    less than HASH_LEN bits.  Responders SHOULD NOT select any SSLv3
-   ciphersuite other than the DHE+3DES suites listed above.
+   ciphersuite.
 
 2.2. TLS security considerations
 
@@ -366,27 +278,23 @@ see tor-design.pdf.
    The basic unit of communication for onion routers and onion
    proxies is a fixed-width "cell".
 
-   On a version 1 connection, each cell contains the following
-   fields:
+   On a version 3 connection, each cell contains the following fields:
 
         CircID                                [CIRCID_LEN bytes]
         Command                               [1 byte]
         Payload (padded with 0 bytes)         [PAYLOAD_LEN bytes]
 
-   On a version 2 or higher connection, all cells are as in version 1
-   connections, except for variable-length cells, whose format is:
+   Variable-length cells have the following format:
 
         CircID                                [CIRCID_LEN octets]
         Command                               [1 octet]
         Length                                [2 octets; big-endian integer]
         Payload                               [Length bytes]
 
-   On a version 2 connection, variable-length cells are indicated by a
-   command byte equal to 7 ("VERSIONS").  On a version 3 or
-   higher connection, variable-length cells are indicated by a command
-   byte equal to 7 ("VERSIONS"), or greater than or equal to 128.
+   Variable-length cells are indicated by a command byte equal to
+   7 ("VERSIONS"), or greater than or equal to 128.
 
-   CIRCID_LEN is 2 for link protocol versions 1, 2, and 3.  CIRCID_LEN
+   CIRCID_LEN is 2 for link protocol version 3.  CIRCID_LEN
    is 4 for link protocol version 4 or higher.  The VERSIONS cell itself
    always has CIRCID_LEN == 2 for backward compatibility.
 
@@ -438,26 +346,18 @@ see tor-design.pdf.
    RELAY cells are used to send commands and data along a circuit; see
    section 6 below.
 
-   VERSIONS and NETINFO cells are used to set up connections in link
-   protocols v2 and higher; in link protocol v3 and higher, CERTS,
+   VERSIONS, CERTS and NETINFO cells are used to set up connections.
    AUTH_CHALLENGE, and AUTHENTICATE may also be used.  See section 4
    below.
 
 4. Negotiating and initializing connections
 
-   After Tor instances negotiate handshake with either the "renegotiation" or
-   "in-protocol" handshakes, they must exchange a set of cells to set up
-   the Tor connection and make it "open" and usable for circuits.
-
-   When the renegotiation handshake is used, both parties immediately
-   send a VERSIONS cell (4.1 below), and after negotiating a link
-   protocol version (which will be 2), each send a NETINFO cell (4.5
-   below) to confirm their addresses and timestamps.  No other intervening
-   cell types are allowed.
+   After Tor instances negotiate handshake, they must exchange a set of cells
+   to set up the Tor connection and make it "open" and usable for circuits.
 
    When the in-protocol handshake is used, the initiator sends a
-   VERSIONS cell to indicate that it will not be renegotiating.  The
-   responder sends a VERSIONS cell, a CERTS cell (4.2 below) to give the
+   VERSIONS cell.  The responder sends a VERSIONS cell, a
+   CERTS cell (4.2 below) to give the
    initiator the certificates it needs to learn the responder's
    identity, an AUTH_CHALLENGE cell (4.3) that the initiator must include
    as part of its answer if it chooses to authenticate, and a NETINFO
@@ -472,29 +372,14 @@ see tor-design.pdf.
    The AUTHORIZE cell type is reserved for future use by scanning-resistance
    designs.
 
-   [Tor versions before 0.2.3.11-alpha did not recognize the AUTHORIZE cell,
-   and did not permit any command other than VERSIONS as the first cell of
-   the in-protocol handshake.]
+   [Tor versions before 0.2.3.11-alpha did not recognize the AUTHORIZE cell.]
 
 4.1. Negotiating versions with VERSIONS cells
 
-   There are multiple instances of the Tor link connection protocol.  Any
-   connection negotiated using the "certificates up front" handshake (see
-   section 2 above) is "version 1".  In any connection where both parties
-   have behaved as in the "renegotiation" handshake, the link protocol
-   version must be 2.  In any connection where both parties have behaved
-   as in the "in-protocol" handshake, the link protocol must be 3 or higher.
-
-   To determine the version, in any connection where the "renegotiation"
-   or "in-protocol" handshake was used (that is, where the responder
-   sent only one certificate at first and where the initiator did not
-   send any certificates in the first negotiation), both parties MUST
-   send a VERSIONS cell.  In "renegotiation", they send a VERSIONS cell
-   right after the renegotiation is finished, before any other cells are
-   sent.  In "in-protocol", the initiator sends a VERSIONS cell
-   immediately after the initial TLS handshake, and the responder
-   replies immediately with a VERSIONS cell.  Parties MUST NOT send any
-   other cells on a connection until they have received a VERSIONS cell.
+   To determine the version to be used in the connection, both parties MUST
+   send a VERSIONS cell immediately after the initial TLS handshake, and the
+   responder replies immediately with a VERSIONS cell.  Parties MUST NOT send
+   any other cells on a connection until they have received a VERSIONS cell.
 
    The payload in a VERSIONS cell is a series of big-endian two-byte
    integers.  Both parties MUST select as the link protocol version the
@@ -504,12 +389,8 @@ see tor-design.pdf.
    close the connection if the versions cell is not well-formed (for example,
    if it contains an odd number of bytes).
 
-   Since the version 1 link protocol does not use the "renegotiation"
-   handshake, implementations MUST NOT list version 1 in their VERSIONS
-   cell.  When the "renegotiation" handshake is used, implementations
-   MUST list only the version 2.  When the "in-protocol" handshake is
-   used, implementations MUST NOT list any version before 3, and SHOULD
-   list at least version 3.
+   Implementations MUST NOT list any version before 3, and SHOULD list at
+   least version 3.
 
    Link protocols differences are:
      1 -- The "certs up front" handshake.
@@ -518,6 +399,7 @@ see tor-design.pdf.
      3 -- Uses the in-protocol handshake.
      4 -- Increases circuit ID width to 4 bytes.
 
+   [As of XXX VER, link protocols 1 and 2 are no longer supported.]
 
 4.2. CERTS cells
 
@@ -657,8 +539,7 @@ see tor-design.pdf.
 
 4.5. NETINFO cells
 
-   If version 2 or higher is negotiated, each party sends the other a
-   NETINFO cell.  The cell's payload is:
+   Each party sends the other a NETINFO cell.  The cell's payload is:
 
          Timestamp              [4 bytes]
          Other OR's address     [variable]
