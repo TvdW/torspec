@@ -1,0 +1,47 @@
+Filename: 264-exit-flag-not-all-plaintext.txt
+Title: Stop giving Exit flags when only unencrypted traffic can exit
+Author: Tom van der Woerdt
+Created: 2016-01-05
+Status: Open
+
+
+1. Introduction
+
+  Tor's Exit flags are assigned to relays that have an exit policy that allows
+  exiting to at least two out of three pre-defined ports: 80, 443 and 6667.
+
+  Since 80 and 6667 (resp. http and irc) are generally used for unencrypted
+  traffic, an attacker could construct an exit policy that relays only
+  unencrypted data.
+
+2. Changes
+
+2.1. Exit flagging
+
+  By replacing the port 6667 (IRC) entry with a port 5222 (XMPP) entry, Exit
+  flags can no longer be assigned to relays that exit only to unencrypted
+  ports.
+
+2.2. dir-spec.txt
+
+  A change to dir-spec.txt will be needed to change port 6667 to 5222.
+
+3. Migration
+
+  This change only needs to be rolled out to directory authorities. Since the
+  flagging system is simple, no special migration is needed for this change,
+  and it will take effect as soon as the deployment of the change has reached
+  a sufficient number of directory authorities.
+
+4. Other considerations
+
+  While it would have been ideal to drop the port 80 condition as well, in the
+  current state of the internet this is not likely to be a good idea. Too
+  much websites still use unencrypted connections. However, this may be worth
+  reconsidering every few years.
+
+  XMPP was chosen to replace IRC because nowadays unencrypted XMPP is rare,
+  and because the XMPP protocol is slowly gaining popularity within the
+  communities on the internet. Other popular ports have been considered, such
+  as 22 (SSH), 465 (SMTP), or 995 (POP3), but these are unlikely to be good
+  candidates because of wide spread bruteforce attacks on these ports.
